@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Visual Sudoku Solver</title>
+  <style>
+    :root {
+      --ink: #172126;
+      --muted: #66747a;
+      --paper: #f5f2eb;
+      --panel: #fffdf8;
+      --line: #d8d2c7;
+      --blue: #216b78;
+      --blue-soft: #d9eef0;
+      --coral: #d86d54;
+      --coral-soft: #f8ded5;
+      --gold: #e6ad3f;
+      --green: #3b8968;
+      --shadow: 0 18px 40px rgba(43, 42, 34, .09);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: radial-gradient(circle at 12% 4%, #fffdf7 0, transparent 32%), linear-gradient(135deg, #f5f2eb 0%, #e8efed 100%);
+      font: 15px/1.45 Georgia, 'Times New Roman', serif;
+      min-height: 100vh;
+    }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    .shell { max-width: 1500px; margin: 0 auto; padding: 24px clamp(16px, 3vw, 46px) 48px; }
+    header { display: flex; justify-content: space-between; align-items: end; gap: 24px; margin-bottom: 24px; }
+    .eyebrow { color: var(--coral); text-transform: uppercase; letter-spacing: .16em; font: 700 11px/1.2 'Trebuchet MS', sans-serif; }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: clamp(2.3rem, 5vw, 4.7rem); line-height: .95; font-weight: 400; letter-spacing: -.04em; max-width: 700px; }
+    header p { color: var(--muted); max-width: 350px; font-size: 16px; }
+    .layout { display: grid; grid-template-columns: minmax(270px, 340px) minmax(440px, 1.1fr) minmax(310px, .85fr); gap: 18px; align-items: start; }
+    .panel { background: rgba(255, 253, 248, .9); border: 1px solid rgba(216, 210, 199, .9); box-shadow: var(--shadow); border-radius: 8px; }
+    .panel + .panel { margin-top: 18px; }
+    .panel-inner { padding: 18px; }
+    .panel-title { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; border-bottom: 1px solid var(--line); padding: 16px 18px 12px; }
+    .panel-title h2 { font-size: 18px; font-weight: 600; }
+    .panel-title span, .hint, .small { color: var(--muted); font: 12px/1.35 'Trebuchet MS', sans-serif; }
+    label { display: block; color: #3e4d51; font: 700 11px/1.2 'Trebuchet MS', sans-serif; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 6px; }
+    select, .text-input { width: 100%; border: 1px solid var(--line); border-radius: 5px; background: #fffefb; padding: 9px 10px; color: var(--ink); }
+    .field { margin-bottom: 16px; }
+    .button-row { display: flex; flex-wrap: wrap; gap: 8px; }
+    button { border: 1px solid var(--blue); background: var(--blue); color: white; border-radius: 5px; padding: 9px 12px; transition: transform .16s ease, background .16s ease; }
+    button:hover:not(:disabled) { transform: translateY(-1px); background: #174f5a; }
+    button.secondary { background: transparent; color: var(--blue); }
+    button.secondary:hover:not(:disabled) { background: var(--blue-soft); }
+    button.coral { border-color: var(--coral); background: var(--coral); }
+    button:disabled { opacity: .42; cursor: not-allowed; }
+    .toggle-list { display: grid; gap: 9px; }
+    .toggle { display: flex; align-items: center; gap: 9px; font-size: 14px; color: #334247; }
+    .toggle input { accent-color: var(--coral); width: 16px; height: 16px; }
+    .speed-wrap { display: flex; align-items: center; gap: 10px; }
+    input[type=range] { width: 100%; accent-color: var(--coral); }
+    .speed-value { min-width: 52px; color: var(--coral); font: 700 12px 'Trebuchet MS', sans-serif; text-align: right; }
+    .status { min-height: 42px; display: flex; align-items: center; gap: 9px; color: #3c4b50; font-size: 14px; }
+    .status::before { content: ''; width: 9px; height: 9px; border-radius: 50%; background: var(--gold); flex: none; }
+    .status.success::before { background: var(--green); }
+    .status.error::before { background: var(--coral); }
+    .board-wrap { padding: 20px; }
+    .board { display: grid; grid-template-columns: repeat(9, 1fr); aspect-ratio: 1; width: min(100%, 650px); margin: 0 auto; border: 3px solid var(--ink); background: var(--ink); gap: 1px; }
+    .cell { position: relative; border: 0; border-radius: 0; background: #fffdf8; color: var(--ink); padding: 0; min-width: 0; font: 500 clamp(19px, 3.2vw, 34px)/1 Georgia, serif; }
+    .cell.given { background: #e8efed; font-weight: 700; }
+    .cell.active { background: var(--blue-soft); box-shadow: inset 0 0 0 3px var(--blue); z-index: 1; }
+    .cell.changed { background: #fff0c8; }
+    .cell.conflict { background: var(--coral-soft); color: #9d3926; }
+    .cell:nth-child(3n) { border-right: 2px solid var(--ink); }
+    .cell:nth-child(9n) { border-right: 0; }
+    .cell:nth-child(n+19):nth-child(-n+27), .cell:nth-child(n+46):nth-child(-n+54) { border-bottom: 2px solid var(--ink); }
+    .cell .index { position: absolute; bottom: 2px; right: 4px; color: #93a0a0; font: 9px 'Trebuchet MS', sans-serif; opacity: 0; }
+    .cell:hover .index { opacity: 1; }
+    .board-footer { display: flex; justify-content: space-between; gap: 12px; margin-top: 14px; align-items: center; }
+    .counter { color: var(--muted); font: 12px 'Trebuchet MS', sans-serif; }
+    .legend { display: flex; gap: 12px; flex-wrap: wrap; color: var(--muted); font: 11px 'Trebuchet MS', sans-serif; }
+    .legend i { display: inline-block; width: 10px; height: 10px; border: 1px solid var(--line); vertical-align: -1px; margin-right: 4px; }
+    .legend .given { background: #e8efed; } .legend .active { background: var(--blue-soft); } .legend .changed { background: #fff0c8;
+    }
+    .controls { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+    .controls button:first-child { background: var(--coral); border-color: var(--coral); }
+    .controls button:last-child { grid-column: span 3; }
+    .metric-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 13px; }
+    .metric { background: #eef3f0; border-radius: 5px; padding: 9px; text-align: center; }
+    .metric b { display: block; font-size: 20px; font-weight: 500; } .metric span { color: var(--muted); font: 10px 'Trebuchet MS', sans-serif; text-transform: uppercase; }
+    .domains { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+    .domain { min-height: 57px; border: 1px solid var(--line); border-radius: 4px; padding: 4px; background: #fffefb; }
+    .domain.active { border-color: var(--blue); background: var(--blue-soft); }
+    .domain strong { display: block; color: var(--muted); font: 10px 'Trebuchet MS', sans-serif; }
+    .domain div { font: 12px/1.25 'Trebuchet MS', sans-serif; letter-spacing: .04em; word-break: break-all; }
+    .successors { display: grid; gap: 6px; max-height: 250px; overflow: auto; }
+    .successor { display: flex; justify-content: space-between; gap: 8px; padding: 8px 9px; border-left: 4px solid var(--line); background: #f4f1e9; font: 12px 'Trebuchet MS', sans-serif; }
+    .successor.pass { border-color: var(--green); background: #e9f3ed; } .successor.fail { opacity: .48; }
+    .successor b { font-weight: 700; }
+    .tree { overflow: auto; min-height: 285px; background: #f4f1e9; border-radius: 5px; padding: 15px 10px; }
+    .tree svg { display: block; min-width: 540px; width: 100%; height: 250px; }
+    .tree-line { stroke: #b8b8aa; stroke-width: 1.5; } .tree-node { fill: #fffdf8; stroke: #9ba8a5; stroke-width: 1.5; } .tree-node.current { fill: var(--coral); stroke: var(--coral); } .tree-node.done { fill: var(--green); stroke: var(--green); }
+    .tree text { font: 11px 'Trebuchet MS', sans-serif; fill: var(--ink); text-anchor: middle; } .tree text.light { fill: white; }
+    .log { max-height: 198px; overflow: auto; display: grid; gap: 7px; font: 12px/1.35 'Trebuchet MS', sans-serif; }
+    .log-entry { display: grid; grid-template-columns: 28px 1fr; gap: 7px; border-bottom: 1px solid #e5e0d6; padding-bottom: 7px; }
+    .log-entry b { color: var(--coral); }
+    .save-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .toast { position: fixed; right: 20px; bottom: 20px; padding: 11px 15px; color: white; background: var(--ink); border-radius: 5px; box-shadow: var(--shadow); opacity: 0; transform: translateY(8px); transition: .2s ease; pointer-events: none; }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    @media (max-width: 1150px) { .layout { grid-template-columns: 290px minmax(420px, 1fr); } .right-col { grid-column: span 2; display: grid; grid-template-columns: 1fr 1fr; gap: 18px; } .right-col .panel + .panel { margin-top: 0; } }
+    @media (max-width: 760px) { header { display: block; } header p { margin-top: 12px; } .layout, .right-col { display: block; } .panel { margin-top: 18px; } .left-col .panel:first-child { margin-top: 0; } .board-wrap { padding: 10px; } .board-footer { display: block; } .legend { margin-top: 9px; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div><div class="eyebrow">Constraint satisfaction lab</div><h1>Visual Sudoku<br>Solver</h1></div>
+      <p>Watch a backtracking search make decisions, prune possibilities, and find its way through a puzzle.</p>
+    </header>
+    <div class="layout">
+      <aside class="left-col">
+        <section class="panel"><div class="panel-title"><h2>Puzzle desk</h2><span>01 / setup</span></div><div class="panel-inner">
+          <div class="field"><label for="puzzleSelect">Starting puzzle</label><select id="puzzleSelect"><option value="classic">Classic</option><option value="sparse">Sparse challenge</option><option value="empty">Empty grid</option><option value="random">Random generated</option><option value="custom">Custom board</option></select></div>
+          <div class="button-row"><button id="newPuzzle" class="secondary">Load puzzle</button><button id="clearBoard" class="secondary">Clear board</button></div>
+          <p class="hint" style="margin-top:12px">Click any cell to edit it. Given clues are shaded.</p>
+          <div class="field" style="margin-top:18px"><label>Search improvements</label><div class="toggle-list"><label class="toggle"><input id="forward" type="checkbox" checked> Forward checking</label><label class="toggle"><input id="arc" type="checkbox"> Arc consistency</label><label class="toggle"><input id="mrv" type="checkbox" checked> Minimum remaining values</label><label class="toggle"><input id="lcv" type="checkbox"> Least constraining value</label><label class="toggle"><input id="visualize" type="checkbox" checked> Show individual steps</label></div></div>
+          <div class="field"><label for="speed">Playback interval</label><div class="speed-wrap"><input id="speed" type="range" min="0.2" max="3" step="0.1" value="1"><span id="speedValue" class="speed-value">1.0 sec</span></div></div>
+          <div id="status" class="status">Ready to explore this puzzle.</div>
+        </div></section>
+        <section class="panel"><div class="panel-title"><h2>Save & share</h2><span>local only</span></div><div class="panel-inner"><div class="save-grid"><button id="savePuzzle" class="secondary">Save puzzle</button><button id="loadPuzzle" class="secondary">Load puzzle</button><button id="saveRun" class="secondary">Save run</button><button id="loadRun" class="secondary">Load run</button><button id="downloadText" class="secondary">Export text</button><button id="downloadPng" class="secondary">Export PNG</button><button id="copyPuzzle" class="secondary">Copy puzzle link</button><button id="copyRun" class="secondary">Copy run link</button></div><input id="upload" type="file" accept=".txt,text/plain" hidden><button id="uploadButton" class="secondary" style="width:100%; margin-top:8px">Upload text file</button></div></section>
+      </aside>
+      <section class="panel"><div class="panel-title"><h2>Current state</h2><span id="phase">idle</span></div><div class="board-wrap"><div id="board" class="board" aria-label="Sudoku board"></div><div class="board-footer"><span id="counter" class="counter">9 clues • 0 / 0 events</span><div class="legend"><span><i class="given"></i>given</span><span><i class="active"></i>active</span><span><i class="changed"></i>changed</span></div></div></div><div class="panel-inner"><div class="controls"><button id="step">Step</button><button id="play" class="secondary">Play</button><button id="reset" class="secondary">Reset</button><button id="finish" class="secondary">Run to completion</button></div><div class="metric-grid"><div class="metric"><b id="expanded">0</b><span>expanded</span></div><div class="metric"><b id="pruned">0</b><span>pruned</span></div><div class="metric"><b id="decisions">0</b><span>decisions</span></div></div></div></section>
+      <aside class="right-col">
+        <section class="panel"><div class="panel-title"><h2>Domains</h2><span>cell possibilities</span></div><div class="panel-inner"><div id="domains" class="domains"></div></div></section>
+        <section class="panel"><div class="panel-title"><h2>Candidate successors</h2><span>fringe preview</span></div><div class="panel-inner"><div id="successors" class="successors"><div class="hint">Start the search to inspect candidate values.</div></div></div></section>
+        <section class="panel"><div class="panel-title"><h2>Search tree</h2><span>expanded nodes</span></div><div class="panel-inner"><div id="tree" class="tree"></div></div></section>
+        <section class="panel"><div class="panel-title"><h2>Event log</h2><span id="eventLabel">waiting</span></div><div class="panel-inner"><div id="log" class="log"><div class="hint">Each solver action will appear here.</div></div></div></section>
+      </aside>
+    </div>
+  </main>
+  <div id="toast" class="toast" role="status"></div>
+<script>
+(() => {
+  const puzzles = {
+    classic: '530070000600195000098000060800060003400803001700020006060000280000419005000080079',
+    sparse: '000000010400000000020000000000050407008000300001090000300400200050100000000806000',
+    empty: '0'.repeat(81)
+  };
+  const digits = [1,2,3,4,5,6,7,8,9];
+  const $ = id => document.getElementById(id);
+  const state = { puzzle: [], givens: new Set(), events: [], cursor: 0, playing: false, timer: null, metrics: {expanded:0, pruned:0, decisions:0}, nodes: [], currentNode: null };
+
+  function parse(text) { return [...text].map(x => Number(x) || 0).slice(0, 81).concat(Array(81).fill(0)).slice(0, 81); }
+  function boardText(values) { return values.map(x => x || '0').join(''); }
+  function row(i) { return Math.floor(i / 9); }
+  function col(i) { return i % 9; }
+  function peers(i) { const out = new Set(); const r=row(i), c=col(i); for (let j=0;j<81;j++) if (j!==i && (row(j)===r || col(j)===c || (Math.floor(r/3)===Math.floor(row(j)/3) && Math.floor(c/3)===Math.floor(col(j)/3)))) out.add(j); return [...out]; }
+  const peerMap = Array.from({length:81}, (_, i) => peers(i));
+  function valid(values) { for (let i=0;i<81;i++) if (values[i] && peerMap[i].some(j => j > i && values[j] === values[i])) return false; return true; }
+  function domainsFor(values) { return values.map((value, i) => value ? [value] : digits.filter(d => peerMap[i].every(j => values[j] !== d))); }
+  function solved(values) { return values.every(Boolean) && valid(values); }
+  function cloneDomains(domains) { return domains.map(d => [...d]); }
+  function formatDomains(domains) { return domains.map(d => d.join('') || '∅'); }
+  function shuffle(list) { return [...list].sort(() => Math.random() - .5); }
+  function generatePuzzle() { const values = Array(81).fill(0); solveQuick(values); const keep = shuffle([...Array(81).keys()]).slice(0, 31); const puzzle = Array(81).fill(0); keep.forEach(i => puzzle[i] = values[i]); return puzzle; }
+  function solveQuick(values) { const ds=domainsFor(values); let best=-1; for(let i=0;i<81;i++) if(!values[i] && (best<0 || ds[i].length < ds[best].length)) best=i; if(best<0) return true; for(const d of shuffle(ds[best])) { values[best]=d; if(valid(values) && solveQuick(values)) return true; values[best]=0; } return false; }
+
+  function renderBoard(values, active, changed) { const board=$('board'); board.innerHTML=''; values.forEach((value,i) => { const cell=document.createElement('button'); cell.className='cell'; if(state.givens.has(i)) cell.classList.add('given'); if(active===i) cell.classList.add('active'); if(changed && changed.has(i)) cell.classList.add('changed'); if(value && peerMap[i].some(j => values[j]===value && values[j]!==0)) cell.classList.add('conflict'); cell.setAttribute('aria-label', `Row ${row(i)+1}, column ${col(i)+1}${value ? `, ${value}` : ', empty'}`); cell.innerHTML=`${value || ''}<span class="index">${i+1}</span>`; if(!state.givens.has(i)) cell.addEventListener('click', () => editCell(i)); board.appendChild(cell); }); }
+  function editCell(i) { const next=prompt(`Cell ${row(i)+1}, ${col(i)+1}: enter 1-9, or leave blank`, state.puzzle[i] || ''); if(next === null) return; const value=next.trim()==='' ? 0 : Number(next); if(!/^[1-9]$/.test(next.trim()) && value!==0) { notify('Use a single digit from 1 to 9.'); return; } state.puzzle[i]=value; state.givens=new Set(state.puzzle.map((v,j)=>v ? j : -1).filter(j=>j>=0)); invalidate(); render(); }
+  function renderDomains(domains=domainsFor(state.puzzle), active=-1) { $('domains').innerHTML = domains.map((d,i)=>`<div class="domain ${i===active?'active':''}"><strong>${String.fromCharCode(65+row(i))}${col(i)+1}</strong><div>${d.length ? d.join(' · ') : 'contradiction'}</div></div>`).join(''); }
+  function renderTree(nodes=state.nodes, currentNode=state.currentNode) { const box=$('tree'); if(!nodes.length) { box.innerHTML='<div class="hint">The search tree will grow as states are expanded.</div>'; return; } const levels={}; nodes.forEach(n => (levels[n.depth] ||= []).push(n)); const maxDepth=Math.max(...nodes.map(n=>n.depth),0), width=Math.max(540, nodes.length*65); const positions={}; Object.entries(levels).forEach(([depth, levelNodes])=>levelNodes.forEach((n,i)=>positions[n.id]={x:(i+1)*width/(levelNodes.length+1), y:27+Number(depth)*58})); let svg=`<svg viewBox="0 0 ${width} ${Math.max(250,(maxDepth+1)*58+30)}" preserveAspectRatio="xMinYMin meet">`; nodes.forEach(n=>{ if(n.parent!==null) svg+=`<line class="tree-line" x1="${positions[n.id].x}" y1="${positions[n.id].y}" x2="${positions[n.parent].x}" y2="${positions[n.parent].y}"/>`; }); nodes.forEach(n=>{ const cls=n.id===currentNode?'current':n.done?'done':''; svg+=`<circle class="tree-node ${cls}" cx="${positions[n.id].x}" cy="${positions[n.id].y}" r="14"/><text class="${cls?'light':''}" x="${positions[n.id].x}" y="${positions[n.id].y+4}">${n.label}</text>`; }); svg+='</svg>'; box.innerHTML=svg; }
+  function renderSuccessors(items=[]) { $('successors').innerHTML=items.length ? items.map(x=>`<div class="successor ${x.pass?'pass':'fail'}"><span><b>${x.value}</b> in ${String.fromCharCode(65+row(x.index))}${col(x.index)+1}</span><span>${x.pass ? 'added to fringe' : x.reason}</span></div>`).join('') : '<div class="hint">No candidate successors at this state.</div>'; }
+  function renderLog() { const log=$('log'); log.innerHTML=state.events.slice(Math.max(0,state.cursor-7), state.cursor+1).reverse().map((e,i)=>`<div class="log-entry"><b>${state.cursor-i}</b><span>${e.text}</span></div>`).join('') || '<div class="hint">Each solver action will appear here.</div>'; }
+  function render() { const event=state.events[state.cursor-1]; const view=event ? event.values : state.puzzle; const metrics=event?.metrics || {expanded:0,pruned:0,decisions:0}; const initialTree=state.events.length ? [state.events[0].nodes[0]] : state.nodes; renderBoard(view,event?.active,event?.changed); renderDomains(event?.domains || domainsFor(view),event?.active); renderSuccessors(event?.successors || []); renderTree(event?.nodes || initialTree,event?.currentNode ?? (state.events.length ? 0 : state.currentNode)); renderLog(); $('counter').textContent=`${state.givens.size} clues • ${state.cursor} / ${state.events.length} events`; $('expanded').textContent=metrics.expanded; $('pruned').textContent=metrics.pruned; $('decisions').textContent=metrics.decisions; $('phase').textContent=event?.phase || 'idle'; $('eventLabel').textContent=event ? event.text : 'waiting'; $('step').disabled=state.events.length>0 && state.cursor>=state.events.length; $('finish').disabled=state.events.length>0 && state.cursor>=state.events.length; $('play').textContent=state.playing ? 'Pause' : 'Play'; }
+  function setStatus(text, type='') { $('status').textContent=text; $('status').className=`status ${type}`; }
+  function notify(text) { const toast=$('toast'); toast.textContent=text; toast.classList.add('show'); setTimeout(()=>toast.classList.remove('show'),2200); }
+  function invalidate() { stop(); state.events=[]; state.cursor=0; state.nodes=[]; state.currentNode=null; state.metrics={expanded:0,pruned:0,decisions:0}; setStatus('Board changed. Ready to explore.'); }
+  function loadPuzzle(values) { stop(); state.puzzle=[...values]; state.givens=new Set(values.map((v,i)=>v?i:-1).filter(i=>i>=0)); invalidate(); render(); }
+  function addEvent(events, values, domains, data) { events.push({values:[...values], domains:cloneDomains(domains), metrics:{...state.metrics}, nodes:state.nodes.map(n=>({...n})), currentNode:state.currentNode, ...data}); }
+
+  function buildEvents() {
+    const values=[...state.puzzle], domains=domainsFor(values), events=[]; state.nodes=[{id:0,parent:null,depth:0,label:'start',done:false}]; state.currentNode=0; let nodeId=1;
+    function search(depth,parent) {
+      if (solved(values)) { state.nodes.find(n=>n.id===parent).done=true; addEvent(events,values,domains,{phase:'solution',text:'Solution found. Every cell satisfies its row, column, and box.',active:-1,changed:new Set()}); return true; }
+      const choices=values.map((v,i)=>!v?i:-1).filter(i=>i>=0); if(!choices.length) return false;
+      let index=choices[0]; if($('mrv').checked) index=choices.reduce((a,b)=>domains[a].length<=domains[b].length?a:b); const candidates=$('lcv').checked ? [...domains[index]].sort((a,b)=>peerMap[index].filter(j=>!values[j]&&domains[j].includes(a)).length-peerMap[index].filter(j=>!values[j]&&domains[j].includes(b)).length) : [...domains[index]];
+      state.metrics.decisions++; addEvent(events,values,domains,{phase:'decision',detail:true,text:`Choose ${String.fromCharCode(65+row(index))}${col(index)+1} with domain {${domains[index].join(', ')}}${$('mrv').checked?' using MRV':''}${$('lcv').checked?'; order values by least-constraining impact':''}.`,active:index,changed:new Set()});
+      const successorItems=[];
+      for (const candidate of candidates) {
+        const before=[...values]; values[index]=candidate; const conflict=!valid(values); let nextDomains=domainsFor(values); let rejected=conflict; let reason=conflict?'violates a constraint':'passes constraints';
+        if(!rejected && $('forward').checked) { const empty=nextDomains.some((d,i)=>!values[i]&&!d.length); if(empty){rejected=true;reason='forward check fails';} }
+        if(!rejected && $('arc').checked) { let changed=true; while(changed){changed=false; for(let i=0;i<81;i++) if(!values[i]) for(const j of peerMap[i]) if(!values[j] && nextDomains[i].length===1) { const filtered=nextDomains[j].filter(d=>d!==nextDomains[i][0]); if(filtered.length!==nextDomains[j].length){nextDomains[j]=filtered;changed=true;} if(!filtered.length) rejected=true; } } if(rejected) reason='arc consistency fails'; }
+        successorItems.push({value:candidate,index,pass:!rejected,reason}); addEvent(events,before,domains,{phase:'candidate',detail:true,text:`Try ${candidate} at ${String.fromCharCode(65+row(index))}${col(index)+1}; ${reason}.`,active:index,changed:new Set([index]),successors:successorItems.slice()});
+        if(rejected){state.metrics.pruned++; values[index]=0; continue;}
+        Object.assign(domains, nextDomains); const node={id:nodeId++,parent,depth:depth+1,label:`${candidate}`,done:false}; state.nodes.push(node); state.currentNode=node.id; state.metrics.expanded++; addEvent(events,values,domains,{phase:'expand',text:`Expand candidate ${candidate}; add this state to the fringe.`,active:index,changed:new Set([index]),successors:successorItems.slice()});
+        if(search(depth+1,node.id)) return true; values[index]=0; domains.splice(0,81,...domainsFor(values)); state.nodes.find(n=>n.id===node.id).done=false; state.currentNode=parent; addEvent(events,values,domains,{phase:'backtrack',text:`Backtrack from ${candidate}; the branch cannot complete.`,active:index,changed:new Set([index])});
+      }
+      return false;
+    }
+    const okay=valid(values) && search(0,0); if(!okay) addEvent(events,values,domains,{phase:'failure',text:'Search exhausted the fringe. This puzzle has no solution under the current constraints.',active:-1,changed:new Set()}); return events;
+  }
+  function startSearch() { if(!valid(state.puzzle)){setStatus('The board has a duplicate clue. Resolve conflicts before searching.','error'); return;} state.metrics={expanded:0,pruned:0,decisions:0}; state.events=buildEvents(); state.cursor=0; setStatus('Search prepared. Step through the event stream or play it.'); render(); }
+  function step() { if(!state.events.length) startSearch(); while(state.cursor<state.events.length){state.cursor++; if($('visualize').checked || !state.events[state.cursor-1].detail) break;} if(state.cursor>0){const event=state.events[state.cursor-1]; if(event.phase==='solution') setStatus('Solved. The final state satisfies every constraint.','success'); else if(event.phase==='failure') setStatus('No solution found.','error'); else setStatus(`Event ${state.cursor} of ${state.events.length}.`); render();} if(state.cursor>=state.events.length) stop(); }
+  function stop() { state.playing=false; if(state.timer) clearInterval(state.timer); state.timer=null; }
+  function play() { if(!state.events.length) startSearch(); if(state.cursor>=state.events.length) return; state.playing=true; state.timer=setInterval(step, Number($('speed').value)*1000); render(); }
+  function finish() { if(!state.events.length) startSearch(); state.cursor=state.events.length; const final=state.events.at(-1); setStatus(final?.phase==='solution'?'Solved. The final state satisfies every constraint.':'Search complete.',final?.phase==='solution'?'success':'error'); render(); }
+  function exportFile(name, type, body) { const blob=body instanceof Blob ? body : new Blob([body],{type}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),500); }
+  function downloadPng() { const canvas=document.createElement('canvas'), size=900; canvas.width=canvas.height=size; const ctx=canvas.getContext('2d'); ctx.fillStyle='#fffdf8';ctx.fillRect(0,0,size,size); const gap=3, cell=(size-gap*10)/9; ctx.strokeStyle='#172126';ctx.lineWidth=gap; for(let i=0;i<=9;i++){ctx.lineWidth=i%3===0?8:2;ctx.beginPath();ctx.moveTo(i*(cell+gap),0);ctx.lineTo(i*(cell+gap),size);ctx.stroke();ctx.beginPath();ctx.moveTo(0,i*(cell+gap));ctx.lineTo(size,i*(cell+gap));ctx.stroke();} ctx.fillStyle='#172126';ctx.font='54px Georgia';ctx.textAlign='center';ctx.textBaseline='middle';state.puzzle.forEach((v,i)=>v&&ctx.fillText(v,col(i)*(cell+gap)+cell/2,row(i)*(cell+gap)+cell/2)); canvas.toBlob(blob=>{if(blob) exportFile('sudoku-puzzle.png','image/png',blob);},'image/png'); }
+  function encodeRun() { const settings={forward:$('forward').checked,arc:$('arc').checked,mrv:$('mrv').checked,lcv:$('lcv').checked,visualize:$('visualize').checked}; return btoa(JSON.stringify({p:boardText(state.puzzle),s:settings,e:state.cursor})); }
+  function saveRun() { if(!state.events.length) startSearch(); const run={puzzle:boardText(state.puzzle),settings:{forward:$('forward').checked,arc:$('arc').checked,mrv:$('mrv').checked,lcv:$('lcv').checked,visualize:$('visualize').checked},events:state.events.map(event=>({...event,changed:[...(event.changed||[])]})),cursor:state.cursor,metrics:state.metrics,nodes:state.nodes,currentNode:state.currentNode}; try{localStorage.setItem('visual-sudoku-run',JSON.stringify(run));notify('Search run saved locally.');}catch{notify('This run is too large for local storage. Use Copy run link instead.');} }
+  function loadRun() { try{const saved=localStorage.getItem('visual-sudoku-run'); if(!saved){notify('No saved run found.');return;} const run=JSON.parse(saved); loadPuzzle(parse(run.puzzle)); Object.entries(run.settings||{}).forEach(([key,value])=>{if($(key)) $(key).checked=!!value;}); state.events=(run.events||[]).map(event=>({...event,changed:new Set(event.changed||[])})); state.cursor=Math.min(run.cursor||0,state.events.length); state.metrics=run.metrics||{expanded:0,pruned:0,decisions:0}; state.nodes=run.nodes||[]; state.currentNode=run.currentNode??null; setStatus('Saved search run restored.'); render();}catch{notify('The saved run could not be restored.');} }
+  function copy(text) { navigator.clipboard?.writeText(text).then(()=>notify('Link copied to clipboard.')).catch(()=>notify('Copy unavailable; link is ready in the address bar.')); }
+  function init() { $('puzzleSelect').addEventListener('change', e=>{ if(e.target.value==='random') loadPuzzle(generatePuzzle()); else if(e.target.value==='custom') loadPuzzle(Array(81).fill(0)); else loadPuzzle(parse(puzzles[e.target.value])); }); $('newPuzzle').onclick=()=>{ const selected=$('puzzleSelect').value; loadPuzzle(selected==='random'?generatePuzzle():selected==='custom'?Array(81).fill(0):parse(puzzles[selected])); }; $('clearBoard').onclick=()=>loadPuzzle(Array(81).fill(0)); $('step').onclick=step; $('play').onclick=()=>state.playing?stop():play(); $('reset').onclick=()=>{stop();state.cursor=0;setStatus('Viewing the starting board.');render();}; $('finish').onclick=finish; $('speed').oninput=e=>$('speedValue').textContent=`${Number(e.target.value).toFixed(1)} sec`; $('savePuzzle').onclick=()=>{localStorage.setItem('visual-sudoku-puzzle',boardText(state.puzzle));notify('Puzzle saved locally.');}; $('loadPuzzle').onclick=()=>{const saved=localStorage.getItem('visual-sudoku-puzzle'); saved?loadPuzzle(parse(saved)):notify('No saved puzzle found.');}; $('saveRun').onclick=saveRun; $('loadRun').onclick=loadRun; $('downloadText').onclick=()=>exportFile('sudoku-puzzle.txt','text/plain',state.puzzle.map((v,i)=>(v||'.')+((i+1)%9?' ':'\n')).join('')); $('downloadPng').onclick=downloadPng; $('copyPuzzle').onclick=()=>copy(`${location.href.split('#')[0]}#puzzle=${btoa(boardText(state.puzzle))}`); $('copyRun').onclick=()=>copy(`${location.href.split('#')[0]}#run=${encodeRun()}`); $('uploadButton').onclick=()=>$('upload').click(); $('upload').onchange=e=>{const file=e.target.files[0]; if(file){const reader=new FileReader();reader.onload=()=>loadPuzzle(parse(String(reader.result).replace(/[^0-9]/g,'')));reader.readAsText(file);}}; const hash=location.hash; if(hash.startsWith('#puzzle=')){try{loadPuzzle(parse(atob(hash.slice(8))))}catch{loadPuzzle(parse(puzzles.classic));}} else if(hash.startsWith('#run=')){try{const run=JSON.parse(atob(hash.slice(5)));loadPuzzle(parse(run.p));Object.entries(run.s||{}).forEach(([k,v])=>{if($(k)) $(k).checked=!!v;});setTimeout(()=>{startSearch();state.cursor=Math.min(run.e||0,state.events.length);render();},0);}catch{loadPuzzle(parse(puzzles.classic));}} else loadPuzzle(parse(puzzles.classic)); }
+  init();
+})();
+</script>
+</body>
+</html>
