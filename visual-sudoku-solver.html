@@ -72,6 +72,8 @@
     .cell-value { position: absolute; inset: 0; display: grid; place-items: center; font: 500 clamp(19px, 3.2vw, 34px)/1 Georgia, serif; pointer-events: none; }
     .cell-domain { position: absolute; top: 2px; left: 2px; right: 2px; height: 68%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(3, 1fr); align-items: center; justify-items: center; color: #788589; font: 500 clamp(6px, .85vw, 9px)/1 'Trebuchet MS', sans-serif; pointer-events: none; }
     .domain-empty { grid-column: 2; grid-row: 2; color: var(--coral); font-weight: 700; }
+    .cell.focus-from { outline: 3px solid var(--coral); outline-offset: -3px; z-index: 2; }
+    .cell.focus-to { outline: 3px dashed var(--blue); outline-offset: -6px; z-index: 2; }
     .cell:nth-child(3n) { border-right: 2px solid var(--ink); }
     .cell:nth-child(9n) { border-right: 0; }
     .cell:nth-child(n+19):nth-child(-n+27), .cell:nth-child(n+46):nth-child(-n+54) { border-bottom: 2px solid var(--ink); }
@@ -93,6 +95,18 @@
     .successor { display: flex; justify-content: space-between; gap: 8px; padding: 8px 9px; border-left: 4px solid var(--line); background: #f4f1e9; font: 12px 'Trebuchet MS', sans-serif; }
     .successor.pass { border-color: var(--green); background: #e9f3ed; } .successor.fail { opacity: .48; }
     .successor b { font-weight: 700; }
+    .propagation { display: grid; gap: 10px; }
+    .arc-queue strong { display: block; font: 700 11px 'Trebuchet MS', sans-serif; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+    .arc-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .arc-chip { padding: 3px 8px; border-radius: 999px; background: #eef3f0; border: 1px solid var(--line); font: 11px 'Trebuchet MS', sans-serif; color: #3c4b50; }
+    .propagation-arc { display: flex; align-items: center; gap: 6px; font: 12px 'Trebuchet MS', sans-serif; }
+    .propagation-arc .arrow { color: var(--muted); }
+    .chip { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 5px; background: #eef3f0; border: 1px solid var(--line); font: 700 12px 'Trebuchet MS', sans-serif; }
+    .chip.removed { background: var(--coral-soft); border-color: var(--coral); color: #9d3926; text-decoration: line-through; }
+    .chip.empty { background: var(--coral-soft); border-color: var(--coral); color: #9d3926; }
+    .chip.focus-from { background: var(--coral); border-color: var(--coral); color: white; }
+    .chip.focus-to { background: var(--blue); border-color: var(--blue); color: white; }
+    .domain-diff { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
     .tree { overflow: auto; min-height: 285px; background: #f4f1e9; border-radius: 5px; padding: 15px 10px; }
     .tree svg { display: block; min-width: 540px; width: 100%; height: 250px; }
     .tree-line { stroke: #b8b8aa; stroke-width: 1.5; } .tree-node { fill: #fffdf8; stroke: #9ba8a5; stroke-width: 1.5; } .tree-node.current { fill: var(--coral); stroke: var(--coral); } .tree-node.done { fill: var(--green); stroke: var(--green); }
@@ -128,6 +142,7 @@
       <section class="panel"><div class="panel-title"><h2>Current state</h2><span id="phase">idle</span></div><div class="board-wrap"><div id="board" class="board" aria-label="Sudoku board"></div><div class="board-footer"><span id="counter" class="counter">9 clues • 0 / 0 events</span><div class="legend"><span><i class="given"></i>given</span><span><i class="active"></i>active</span><span><i class="changed"></i>changed</span></div></div></div><div class="panel-inner"><div class="controls"><button id="step">Step</button><button id="play" class="secondary">Play</button><button id="reset" class="secondary">Reset</button><button id="finish" class="secondary">Run to completion</button></div><div class="metric-grid"><div class="metric"><b id="expanded">0</b><span>expanded</span></div><div class="metric"><b id="pruned">0</b><span>pruned</span></div><div class="metric"><b id="decisions">0</b><span>decisions</span></div></div></div></section>
       <aside class="right-col">
         <section class="panel"><div class="panel-title"><h2>Candidate successors</h2><span>fringe preview</span></div><div class="panel-inner"><div id="successors" class="successors"><div class="hint">Start the search to inspect candidate values.</div></div></div></section>
+        <section class="panel"><div class="panel-title"><h2>Constraint propagation</h2><span>forward checking &amp; AC-3</span></div><div class="panel-inner"><div id="propagation" class="propagation"><div class="hint">Enable forward checking or arc consistency to see each domain check.</div></div></div></section>
         <section class="panel"><div class="panel-title"><h2>Search tree</h2><span>expanded nodes</span></div><div class="panel-inner"><div id="tree" class="tree"></div></div></section>
         <section class="panel"><div class="panel-title"><h2>Event log</h2><span id="eventLabel">waiting</span></div><div class="panel-inner"><div id="log" class="log"><div class="hint">Each solver action will appear here.</div></div></div></section>
       </aside>
@@ -149,6 +164,7 @@
   function boardText(values) { return values.map(x => x || '0').join(''); }
   function row(i) { return Math.floor(i / 9); }
   function col(i) { return i % 9; }
+  function cellLabel(i) { return `${String.fromCharCode(65+row(i))}${col(i)+1}`; }
   function peers(i) { const out = new Set(); const r=row(i), c=col(i); for (let j=0;j<81;j++) if (j!==i && (row(j)===r || col(j)===c || (Math.floor(r/3)===Math.floor(row(j)/3) && Math.floor(c/3)===Math.floor(col(j)/3)))) out.add(j); return [...out]; }
   const peerMap = Array.from({length:81}, (_, i) => peers(i));
   function valid(values) { for (let i=0;i<81;i++) if (values[i] && peerMap[i].some(j => j > i && values[j] === values[i])) return false; return true; }
@@ -160,12 +176,13 @@
   function generatePuzzle() { const values = Array(81).fill(0); solveQuick(values); const keep = shuffle([...Array(81).keys()]).slice(0, 31); const puzzle = Array(81).fill(0); keep.forEach(i => puzzle[i] = values[i]); return puzzle; }
   function solveQuick(values) { const ds=domainsFor(values); let best=-1; for(let i=0;i<81;i++) if(!values[i] && (best<0 || ds[i].length < ds[best].length)) best=i; if(best<0) return true; for(const d of shuffle(ds[best])) { values[best]=d; if(valid(values) && solveQuick(values)) return true; values[best]=0; } return false; }
 
-  function renderBoard(values, active, changed, domains=domainsFor(values)) { const board=$('board'); board.innerHTML=''; values.forEach((value,i) => { const cell=document.createElement('button'); cell.className='cell'; if(state.givens.has(i)) cell.classList.add('given'); if(active===i) cell.classList.add('active'); if(changed && changed.has(i)) cell.classList.add('changed'); if(value && peerMap[i].some(j => values[j]===value && values[j]!==0)) cell.classList.add('conflict'); const candidates=domains[i] || []; const domainText=candidates.join(', ') || 'none'; cell.setAttribute('aria-label', `Row ${row(i)+1}, column ${col(i)+1}${value ? `, assigned ${value}` : `, empty, domain ${domainText}`}`); const candidateMarkup=value ? '' : `<span class="cell-domain" aria-hidden="true">${candidates.length ? candidates.map(digit=>`<span>${digit}</span>`).join('') : '<span class="domain-empty">∅</span>'}</span>`; cell.innerHTML=`${candidateMarkup}<span class="cell-value">${value || ''}</span><span class="index">${i+1}</span>`; if(!state.givens.has(i)) cell.addEventListener('click', () => editCell(i)); board.appendChild(cell); }); }
+  function renderBoard(values, active, changed, domains=domainsFor(values), focusFrom=-1, focusTo=-1) { const board=$('board'); board.innerHTML=''; values.forEach((value,i) => { const cell=document.createElement('button'); cell.className='cell'; if(state.givens.has(i)) cell.classList.add('given'); if(active===i) cell.classList.add('active'); if(changed && changed.has(i)) cell.classList.add('changed'); if(focusFrom===i) cell.classList.add('focus-from'); if(focusTo===i) cell.classList.add('focus-to'); if(value && peerMap[i].some(j => values[j]===value && values[j]!==0)) cell.classList.add('conflict'); const candidates=domains[i] || []; const domainText=candidates.join(', ') || 'none'; cell.setAttribute('aria-label', `Row ${row(i)+1}, column ${col(i)+1}${value ? `, assigned ${value}` : `, empty, domain ${domainText}`}`); const candidateMarkup=value ? '' : `<span class="cell-domain" aria-hidden="true">${candidates.length ? candidates.map(digit=>`<span>${digit}</span>`).join('') : '<span class="domain-empty">∅</span>'}</span>`; cell.innerHTML=`${candidateMarkup}<span class="cell-value">${value || ''}</span><span class="index">${i+1}</span>`; if(!state.givens.has(i)) cell.addEventListener('click', () => editCell(i)); board.appendChild(cell); }); }
   function editCell(i) { const next=prompt(`Cell ${row(i)+1}, ${col(i)+1}: enter 1-9, or leave blank`, state.puzzle[i] || ''); if(next === null) return; const value=next.trim()==='' ? 0 : Number(next); if(!/^[1-9]$/.test(next.trim()) && value!==0) { notify('Use a single digit from 1 to 9.'); return; } state.puzzle[i]=value; state.givens=new Set(state.puzzle.map((v,j)=>v ? j : -1).filter(j=>j>=0)); invalidate(); render(); }
   function renderTree(nodes=state.nodes, currentNode=state.currentNode) { const box=$('tree'); if(!nodes.length) { box.innerHTML='<div class="hint">The search tree will grow as states are expanded.</div>'; return; } const levels={}; nodes.forEach(n => (levels[n.depth] ||= []).push(n)); const maxDepth=Math.max(...nodes.map(n=>n.depth),0), width=Math.max(540, nodes.length*65); const positions={}; Object.entries(levels).forEach(([depth, levelNodes])=>levelNodes.forEach((n,i)=>positions[n.id]={x:(i+1)*width/(levelNodes.length+1), y:27+Number(depth)*58})); let svg=`<svg viewBox="0 0 ${width} ${Math.max(250,(maxDepth+1)*58+30)}" preserveAspectRatio="xMinYMin meet">`; nodes.forEach(n=>{ if(n.parent!==null) svg+=`<line class="tree-line" x1="${positions[n.id].x}" y1="${positions[n.id].y}" x2="${positions[n.parent].x}" y2="${positions[n.parent].y}"/>`; }); nodes.forEach(n=>{ const cls=n.id===currentNode?'current':n.done?'done':''; svg+=`<circle class="tree-node ${cls}" cx="${positions[n.id].x}" cy="${positions[n.id].y}" r="14"/><text class="${cls?'light':''}" x="${positions[n.id].x}" y="${positions[n.id].y+4}">${n.label}</text>`; }); svg+='</svg>'; box.innerHTML=svg; }
-  function renderSuccessors(items=[]) { $('successors').innerHTML=items.length ? items.map(x=>`<div class="successor ${x.pass?'pass':'fail'}"><span><b>${x.value}</b> in ${String.fromCharCode(65+row(x.index))}${col(x.index)+1}</span><span>${x.pass ? 'added to fringe' : x.reason}</span></div>`).join('') : '<div class="hint">No candidate successors at this state.</div>'; }
+  function renderSuccessors(items=[]) { $('successors').innerHTML=items.length ? items.map(x=>`<div class="successor ${x.pass?'pass':'fail'}"><span><b>${x.value}</b> in ${cellLabel(x.index)}</span><span>${x.pass ? 'added to fringe' : x.reason}</span></div>`).join('') : '<div class="hint">No candidate successors at this state.</div>'; }
+  function renderPropagation(event) { const box=$('propagation'); if(!event || !event.checkKind) { box.innerHTML='<div class="hint">Enable forward checking or arc consistency to see each domain check.</div>'; return; } const parts=[]; if(event.queue) { parts.push(`<div class="arc-queue"><strong>Pending arcs (${event.queue.length})</strong><div class="arc-chips">${event.queue.length ? event.queue.map(arc=>`<span class="arc-chip">${cellLabel(arc.from)} → ${cellLabel(arc.to)}</span>`).join('') : '<span class="hint">queue is empty</span>'}</div></div>`); } if(event.focusFrom>=0 || event.focusTo>=0) { parts.push(`<div class="propagation-arc">${event.focusTo>=0?`<span class="chip focus-to">${cellLabel(event.focusTo)}</span><span class="arrow">supports →</span>`:''}${event.focusFrom>=0?`<span class="chip focus-from">${cellLabel(event.focusFrom)}</span>`:''}</div>`); } if(event.domainBefore) { parts.push(`<div class="domain-diff"><span class="small">Domain of ${cellLabel(event.focusFrom)}:</span> ${event.domainBefore.map(d=>`<span class="chip ${!event.domainAfter.includes(d)?'removed':''}">${d}</span>`).join('')} <span class="arrow">→</span> ${event.domainAfter.length ? event.domainAfter.map(d=>`<span class="chip">${d}</span>`).join('') : '<span class="chip empty">∅</span>'}</div>`); } box.innerHTML = parts.join('') || '<div class="hint">No domain change this step.</div>'; }
   function renderLog() { const log=$('log'); log.innerHTML=state.events.slice(Math.max(0,state.cursor-7), state.cursor+1).reverse().map((e,i)=>`<div class="log-entry"><b>${state.cursor-i}</b><span>${e.text}</span></div>`).join('') || '<div class="hint">Each solver action will appear here.</div>'; }
-  function render() { const event=state.events[state.cursor-1]; const view=event ? event.values : state.puzzle; const metrics=event?.metrics || {expanded:0,pruned:0,decisions:0}; const initialTree=state.events.length ? [state.events[0].nodes[0]] : state.nodes; renderBoard(view,event?.active,event?.changed,event?.domains || domainsFor(view)); renderSuccessors(event?.successors || []); renderTree(event?.nodes || initialTree,event?.currentNode ?? (state.events.length ? 0 : state.currentNode)); renderLog(); $('counter').textContent=`${state.givens.size} clues • ${state.cursor} / ${state.events.length} events`; $('expanded').textContent=metrics.expanded; $('pruned').textContent=metrics.pruned; $('decisions').textContent=metrics.decisions; $('phase').textContent=event?.phase || 'idle'; $('eventLabel').textContent=event ? event.text : 'waiting'; $('step').disabled=state.events.length>0 && state.cursor>=state.events.length; $('finish').disabled=state.events.length>0 && state.cursor>=state.events.length; $('play').textContent=state.playing ? 'Pause' : 'Play'; }
+  function render() { const event=state.events[state.cursor-1]; const view=event ? event.values : state.puzzle; const metrics=event?.metrics || {expanded:0,pruned:0,decisions:0}; const initialTree=state.events.length ? [state.events[0].nodes[0]] : state.nodes; renderBoard(view,event?.active,event?.changed,event?.domains || domainsFor(view),event?.focusFrom ?? -1,event?.focusTo ?? -1); renderSuccessors(event?.successors || []); renderPropagation(event); renderTree(event?.nodes || initialTree,event?.currentNode ?? (state.events.length ? 0 : state.currentNode)); renderLog(); $('counter').textContent=`${state.givens.size} clues • ${state.cursor} / ${state.events.length} events`; $('expanded').textContent=metrics.expanded; $('pruned').textContent=metrics.pruned; $('decisions').textContent=metrics.decisions; $('phase').textContent=event?.phase || 'idle'; $('eventLabel').textContent=event ? event.text : 'waiting'; $('step').disabled=state.events.length>0 && state.cursor>=state.events.length; $('finish').disabled=state.events.length>0 && state.cursor>=state.events.length; $('play').textContent=state.playing ? 'Pause' : 'Play'; }
   function setStatus(text, type='') { $('status').textContent=text; $('status').className=`status ${type}`; }
   function notify(text) { const toast=$('toast'); toast.textContent=text; toast.classList.add('show'); setTimeout(()=>toast.classList.remove('show'),2200); }
   function invalidate() { stop(); state.events=[]; state.cursor=0; state.nodes=[]; state.currentNode=null; state.metrics={expanded:0,pruned:0,decisions:0}; setStatus('Board changed. Ready to explore.'); }
@@ -174,6 +191,8 @@
 
   function buildEvents() {
     const values=[...state.puzzle], domains=domainsFor(values), events=[]; state.nodes=[{id:0,parent:null,depth:0,label:'start',done:false}]; state.currentNode=0; let nodeId=1;
+    const budget={remaining:20000,noticeShown:false};
+    function emitDetail(valuesSnapshot,domainsSnapshot,data) { if(budget.remaining>0) { budget.remaining--; addEvent(events,valuesSnapshot,domainsSnapshot,data); } else if(!budget.noticeShown) { budget.noticeShown=true; addEvent(events,valuesSnapshot,domainsSnapshot,{phase:'notice',text:'Detailed forward-checking and arc-consistency steps were truncated after 20,000 events to keep the visualization responsive; the search continues silently.',active:-1,changed:new Set()}); } }
     function search(depth,parent) {
       if (solved(values)) { state.nodes.find(n=>n.id===parent).done=true; addEvent(events,values,domains,{phase:'solution',text:'Solution found. Every cell satisfies its row, column, and box.',active:-1,changed:new Set()}); return true; }
       const choices=values.map((v,i)=>!v?i:-1).filter(i=>i>=0); if(!choices.length) return false;
@@ -181,10 +200,51 @@
       state.metrics.decisions++; addEvent(events,values,domains,{phase:'decision',detail:true,text:`Choose ${String.fromCharCode(65+row(index))}${col(index)+1} with domain {${domains[index].join(', ')}}${$('mrv').checked?' using MRV':''}${$('lcv').checked?'; order values by least-constraining impact':''}.`,active:index,changed:new Set()});
       const successorItems=[];
       for (const candidate of candidates) {
-        const before=[...values]; values[index]=candidate; const conflict=!valid(values); let nextDomains=domainsFor(values); let rejected=conflict; let reason=conflict?'violates a constraint':'passes constraints';
-        if(!rejected && $('forward').checked) { const empty=nextDomains.some((d,i)=>!values[i]&&!d.length); if(empty){rejected=true;reason='forward check fails';} }
-        if(!rejected && $('arc').checked) { let changed=true; while(changed){changed=false; for(let i=0;i<81;i++) if(!values[i]) for(const j of peerMap[i]) if(!values[j] && nextDomains[i].length===1) { const filtered=nextDomains[j].filter(d=>d!==nextDomains[i][0]); if(filtered.length!==nextDomains[j].length){nextDomains[j]=filtered;changed=true;} if(!filtered.length) rejected=true; } } if(rejected) reason='arc consistency fails'; }
-        successorItems.push({value:candidate,index,pass:!rejected,reason}); addEvent(events,before,domains,{phase:'candidate',detail:true,text:`Try ${candidate} at ${String.fromCharCode(65+row(index))}${col(index)+1}; ${reason}.`,active:index,changed:new Set([index]),successors:successorItems.slice()});
+        const before=[...values]; values[index]=candidate; const conflict=!valid(values); const nextDomains=cloneDomains(domains); nextDomains[index]=[candidate]; let rejected=conflict; let reason=conflict?'violates a constraint':'passes constraints';
+        if (!rejected && $('forward').checked) {
+          for (const neighbor of peerMap[index]) {
+            if (values[neighbor]) continue;
+            const domainBefore=nextDomains[neighbor];
+            if (!domainBefore.includes(candidate)) continue;
+            const domainAfter=domainBefore.filter(d=>d!==candidate); nextDomains[neighbor]=domainAfter;
+            emitDetail(values,nextDomains,{phase:'forward-check',detail:true,checkKind:'forward',focusFrom:neighbor,focusTo:index,domainBefore:[...domainBefore],domainAfter:[...domainAfter],active:index,changed:new Set([neighbor]),text:`Forward checking: remove ${candidate} from the domain of ${cellLabel(neighbor)} (a peer of ${cellLabel(index)}). Domain: {${domainBefore.join(', ')}} → {${domainAfter.length?domainAfter.join(', '):'∅'}}.`});
+            if (!domainAfter.length) {
+              rejected=true; reason=`forward checking empties the domain of ${cellLabel(neighbor)}`;
+              emitDetail(values,nextDomains,{phase:'forward-check-fail',detail:true,checkKind:'forward-fail',focusFrom:neighbor,focusTo:index,active:index,changed:new Set([neighbor]),text:`Forward checking fails: ${cellLabel(neighbor)} has no remaining values.`});
+              break;
+            }
+          }
+        }
+        if (!rejected && !$('forward').checked && !$('arc').checked) {
+          for (const neighbor of peerMap[index]) { if (values[neighbor]) continue; if (nextDomains[neighbor].includes(candidate)) nextDomains[neighbor]=nextDomains[neighbor].filter(d=>d!==candidate); }
+        }
+        if (!rejected && $('arc').checked) {
+          const queue=[]; const queued=new Set(); const arcKey=(from,to)=>`${from}>${to}`;
+          const enqueue=(from,to)=>{ if(values[from]) return; const key=arcKey(from,to); if(queued.has(key)) return; queued.add(key); queue.push({from,to}); };
+          peerMap[index].forEach(neighbor=>enqueue(neighbor,index));
+          emitDetail(values,nextDomains,{phase:'arc-init',detail:true,checkKind:'arc-init',queue:queue.map(a=>({...a})),focusFrom:-1,focusTo:index,active:index,changed:new Set(),text:`Arc consistency (AC-3): seed the queue with ${queue.length} arc${queue.length===1?'':'s'} pointing into the peers of ${cellLabel(index)}.`});
+          while (queue.length && !rejected) {
+            const arc=queue.shift(); queued.delete(arcKey(arc.from,arc.to));
+            if (values[arc.from]) continue;
+            emitDetail(values,nextDomains,{phase:'arc-check',detail:true,checkKind:'arc-check',queue:queue.map(a=>({...a})),focusFrom:arc.from,focusTo:arc.to,active:index,changed:new Set(),text:`Dequeue arc (${cellLabel(arc.from)} → ${cellLabel(arc.to)}): does every value left for ${cellLabel(arc.from)} stay supported by ${cellLabel(arc.to)}?`});
+            const support=nextDomains[arc.to];
+            if (support.length===1 && nextDomains[arc.from].includes(support[0])) {
+              const supportValue=support[0]; const domainBefore=[...nextDomains[arc.from]]; const domainAfter=domainBefore.filter(d=>d!==supportValue); nextDomains[arc.from]=domainAfter;
+              emitDetail(values,nextDomains,{phase:'arc-revise',detail:true,checkKind:'arc-revise',queue:queue.map(a=>({...a})),focusFrom:arc.from,focusTo:arc.to,domainBefore,domainAfter,active:index,changed:new Set([arc.from]),text:`Revise ${cellLabel(arc.from)}: ${cellLabel(arc.to)}'s only remaining value is ${supportValue}, so remove it. Domain: {${domainBefore.join(', ')}} → {${domainAfter.length?domainAfter.join(', '):'∅'}}.`});
+              if (!domainAfter.length) {
+                rejected=true; reason=`arc consistency empties the domain of ${cellLabel(arc.from)}`;
+                emitDetail(values,nextDomains,{phase:'arc-fail',detail:true,checkKind:'arc-fail',queue:queue.map(a=>({...a})),focusFrom:arc.from,focusTo:arc.to,active:index,changed:new Set([arc.from]),text:`Arc consistency fails: ${cellLabel(arc.from)} has no remaining values.`});
+                break;
+              }
+              let added=0;
+              peerMap[arc.from].forEach(neighbor=>{ if(neighbor!==arc.to && !values[neighbor]) { const size=queue.length; enqueue(neighbor,arc.from); if(queue.length>size) added++; } });
+              emitDetail(values,nextDomains,{phase:'arc-enqueue',detail:true,checkKind:'arc-enqueue',queue:queue.map(a=>({...a})),focusFrom:arc.from,focusTo:-1,active:index,changed:new Set(),text: added ? `${cellLabel(arc.from)}'s domain changed; enqueue ${added} arc${added===1?'':'s'} from its peers.` : `${cellLabel(arc.from)}'s domain changed, but its peers are already queued.`});
+            } else {
+              emitDetail(values,nextDomains,{phase:'arc-no-change',detail:true,checkKind:'arc-no-change',queue:queue.map(a=>({...a})),focusFrom:arc.from,focusTo:arc.to,active:index,changed:new Set(),text:`No revision needed for (${cellLabel(arc.from)} → ${cellLabel(arc.to)}).`});
+            }
+          }
+        }
+        successorItems.push({value:candidate,index,pass:!rejected,reason}); addEvent(events,before,domains,{phase:'candidate',detail:true,text:`Try ${candidate} at ${cellLabel(index)}; ${reason}.`,active:index,changed:new Set([index]),successors:successorItems.slice()});
         if(rejected){state.metrics.pruned++; values[index]=0; continue;}
         Object.assign(domains, nextDomains); const node={id:nodeId++,parent,depth:depth+1,label:`${candidate}`,done:false}; state.nodes.push(node); state.currentNode=node.id; state.metrics.expanded++; addEvent(events,values,domains,{phase:'expand',text:`Expand candidate ${candidate}; add this state to the fringe.`,active:index,changed:new Set([index]),successors:successorItems.slice()});
         if(search(depth+1,node.id)) return true; values[index]=0; domains.splice(0,81,...domainsFor(values)); state.nodes.find(n=>n.id===node.id).done=false; state.currentNode=parent; addEvent(events,values,domains,{phase:'backtrack',text:`Backtrack from ${candidate}; the branch cannot complete.`,active:index,changed:new Set([index])});
